@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Fluy • Controle Financeiro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+@keyframes float {
+  0% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+  100% { transform: translateY(0); }
+}
+.logo-float { animation: float 3s ease-in-out infinite; }
+</style>
+</head>
+
+<body class="bg-gradient-to-br from-green-600 to-yellow-400 min-h-screen flex justify-center">
+
+<!-- LOGIN -->
+<div id="loginScreen" class="w-full max-w-md p-6 text-white hidden">
+  <div class="bg-white text-black rounded-2xl p-6 shadow-xl">
+    <h2 class="text-2xl font-bold text-center mb-4">Fluy</h2>
+
+    <input id="email" type="email" placeholder="Email"
+      class="w-full border rounded-xl p-3 mb-3">
+
+    <input id="password" type="password" placeholder="Senha"
+      class="w-full border rounded-xl p-3 mb-4">
+
+    <button onclick="login()"
+      class="w-full bg-green-600 text-white py-3 rounded-xl mb-2 active:scale-95">
+      Entrar / Criar conta
+    </button>
+
+    <p id="loginMsg" class="text-center text-sm text-red-500"></p>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" class="w-full max-w-md p-4 text-white hidden">
+
+<!-- HEADER -->
+<div class="flex flex-col items-center mb-4">
+  <div class="logo-float bg-white rounded-full w-16 h-16 flex items-center justify-center shadow-xl mb-2">
+    <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
+      <path d="M3 14c4-6 10-6 18-2" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M3 18c4-4 10-4 18 0" stroke="#facc15" stroke-width="2.5" stroke-linecap="round"/>
+    </svg>
+  </div>
+
+  <h1 class="text-2xl font-bold">Fluy</h1>
+  <p class="text-xs opacity-90 mb-2">Seu dinheiro em movimento</p>
+
+  <button onclick="logout()" class="text-xs underline opacity-80">
+    Sair
+  </button>
+</div>
+
+<!-- SALDO -->
+<div class="bg-white text-black rounded-2xl p-5 shadow-xl mb-4">
+<p class="text-sm text-gray-500">Saldo disponível no mês</p>
+<h2 id="balance" class="text-3xl font-bold text-green-600">R$ 0,00</h2>
+
+<div class="flex gap-3 mt-4">
+<button onclick="openModal('income')" class="flex-1 bg-green-600 py-4 rounded-xl text-lg active:scale-95">
++ Receita
+</button>
+<button onclick="openModal('expense')" class="flex-1 bg-red-500 py-4 rounded-xl text-lg active:scale-95">
+- Gasto
+</button>
+</div>
+
+<p id="message" class="mt-3 text-center font-medium"></p>
+</div>
+
+<!-- LANÇAMENTOS -->
+<div class="bg-white text-black rounded-2xl p-4 shadow mb-4">
+<p class="font-semibold mb-2">Lançamentos</p>
+<ul id="list" class="space-y-2 text-sm"></ul>
+</div>
+
+<!-- GRÁFICO -->
+<div class="bg-white text-black rounded-2xl p-4 shadow">
+<p class="font-semibold mb-2">Despesas por categoria</p>
+<canvas id="chart"></canvas>
+</div>
+
+</div>
+
+<!-- MODAL -->
+<div id="modal" class="fixed inset-0 bg-black/40 hidden items-end">
+<div class="bg-white w-full rounded-t-3xl p-5 text-black">
+
+<p id="modalTitle" class="font-bold mb-3"></p>
+
+<input id="valueInput" type="number" placeholder="Valor"
+class="w-full border rounded-xl p-3 mb-3">
+
+<div id="categoryButtons" class="grid grid-cols-2 gap-2 mb-4"></div>
+
+<button onclick="confirmAdd()" class="w-full bg-green-600 text-white py-3 rounded-xl">
+Confirmar
+</button>
+
+<button onclick="closeModal()" class="w-full mt-2 text-gray-500">Cancelar</button>
+
+</div>
+</div>
+
+<script>
+let user=null;
+let items=[];
+let currentType="";
+let selectedCategory="";
+
+const incomeCategories=["Salário","Renda Extra","Freelas","Outros"];
+const expenseCategories=["Moradia","Alimentação","Transporte","Lazer","Outros"];
+
+const chart=new Chart(document.getElementById("chart"),{
+type:"pie",
+data:{labels:expenseCategories,datasets:[{data:Array(expenseCategories.length).fill(0)}]}
+});
+
+// AUTH
+function login(){
+  const email=document.getElementById("email").value;
+  const pass=document.getElementById("password").value;
+  if(!email||!pass)return;
+
+  const users=JSON.parse(localStorage.getItem("fluy_users"))||{};
+  users[email]=pass;
+
+  localStorage.setItem("fluy_users",JSON.stringify(users));
+  localStorage.setItem("fluy_user",email);
+
+  init();
+}
+
+function logout(){
+  localStorage.removeItem("fluy_user");
+  location.reload();
+}
+
+// APP
+function init(){
+  user=localStorage.getItem("fluy_user");
+  if(!user){
+    loginScreen.classList.remove("hidden");
+    return;
+  }
+  loginScreen.classList.add("hidden");
+  app.classList.remove("hidden");
+
+  items=JSON.parse(localStorage.getItem("fluy_items_"+user))||[];
+  updateUI();
+}
+
+function updateUI(){
+  const income=items.filter(i=>i.type==="income").reduce((a,b)=>a+b.value,0);
+  const expense=items.filter(i=>i.type==="expense").reduce((a,b)=>a+b.value,0);
+  balance.innerText=`R$ ${(income-expense).toFixed(2)}`;
+
+  expenseCategories.forEach((c,i)=>{
+    chart.data.datasets[0].data[i]=items.filter(it=>it.type==="expense"&&it.category===c)
+    .reduce((a,b)=>a+b.value,0);
+  });
+  chart.update();
+
+  list.innerHTML=items.map((it,i)=>`
+<li class="flex justify-between bg-gray-100 rounded-lg p-2">
+<span>${it.category} • R$ ${it.value}</span>
+<button onclick="removeItem(${i})" class="text-red-500">✕</button>
+</li>`).join("");
+
+  localStorage.setItem("fluy_items_"+user,JSON.stringify(items));
+}
+
+function openModal(t){
+  currentType=t;selectedCategory="";
+  modalTitle.innerText=t==="income"?"Adicionar Receita":"Adicionar Gasto";
+  categoryButtons.innerHTML="";
+  (t==="income"?incomeCategories:expenseCategories).forEach(c=>{
+    let b=document.createElement("button");
+    b.innerText=c;
+    b.className="border rounded-xl py-2";
+    b.onclick=()=>{selectedCategory=c;b.classList.add("bg-green-200")};
+    categoryButtons.appendChild(b);
+  });
+  modal.classList.remove("hidden");
+}
+function closeModal(){modal.classList.add("hidden");}
+
+function confirmAdd(){
+  const v=Number(valueInput.value);
+  if(!v||!selectedCategory)return;
+  items.push({value:v,category:selectedCategory,type:currentType});
+  valueInput.value="";
+  closeModal();
+  updateUI();
+}
+
+function removeItem(i){
+  items.splice(i,1);
+  updateUI();
+}
+
+init();
+</script>
+
+</body>
+</html>
